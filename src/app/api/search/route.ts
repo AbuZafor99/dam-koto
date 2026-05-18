@@ -39,7 +39,7 @@ setInterval(() => {
 // ─── SECURITY: Input Sanitization ───
 function sanitizeQuery(query: string): string {
   return query
-    .replace(/[<>\"'&]/g, "") // Remove HTML chars
+    .replace(/[<>"'&]/g, "") // Remove HTML chars
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 200);
@@ -58,6 +58,7 @@ const BLOCKED_DOMAINS = [
   "linkedin.com", "wikipedia.org", "medium.com",
   "daraz.com.bd", "daraz.com", "daraz.pk", "daraz.lk", "daraz.com.np",
   "bikroy.com", "alibaba.com", "aliexpress.com",
+  "google.com", "google.com.bd", "bing.com",
 ];
 
 function isBlockedDomain(url: string): boolean {
@@ -71,10 +72,41 @@ function isBlockedDomain(url: string): boolean {
   }
 }
 
+// ─── Accessory Keywords (to filter out unrelated cheap items) ───
+const ACCESSORY_PATTERNS = [
+  /\bcase\b/i, /\bcover\b/i, /\bscreen\s*protector/i, /\btempered\s*glass/i,
+  /\bcharger\b/i, /\bcable\b/i, /\badapter\b/i, /\bheadphone\b/i,
+  /\bearbuds?\b/i, /\bear\s*phone/i, /\bstand\b/i, /\bholder\b/i,
+  /\bmount\b/i, /\bstrap\b/i, /\bband\b/i, /\bprotector\b/i,
+  /\bshield\b/i, /\bskin\b/i, /\bsticker\b/i, /\bdecal\b/i,
+  /\bpouch\b/i, /\bsleeve\b/i, /\bcarry\s*case/i, /\bkeyboard\b/i,
+  /\bmouse\b/i, /\bpen\b/i, /\bstylus\b/i, /\bpower\s*bank/i,
+  /\bhub\b/i, /\bdock\b/i, /\bmat\b/i, /\bpad\b/i,
+];
+
+function isLikelyAccessory(name: string, snippet: string): boolean {
+  const text = `${name} ${snippet}`;
+  return ACCESSORY_PATTERNS.some((pattern) => pattern.test(text));
+}
+
 // ─── URL Validation & Cleanup ───
 function validateAndCleanUrl(url: string): string | null {
   try {
-    const parsed = new URL(url);
+    let cleanedUrl = url;
+
+    // Decode Google redirect URLs: https://www.google.com/url?q=ENCODED_URL&...
+    const googleRedirectMatch = cleanedUrl.match(/[?&]q=([^&]+)/);
+    if (googleRedirectMatch && (cleanedUrl.includes("google.com/url") || cleanedUrl.includes("google.com.bd/url"))) {
+      cleanedUrl = decodeURIComponent(googleRedirectMatch[1]);
+    }
+
+    // Decode any URL-encoded URLs that might be nested
+    try {
+      const doubleDecoded = decodeURIComponent(cleanedUrl);
+      if (doubleDecoded.startsWith("http")) cleanedUrl = doubleDecoded;
+    } catch { /* already decoded */ }
+
+    const parsed = new URL(cleanedUrl);
 
     // Must be http or https
     if (!["http:", "https:"].includes(parsed.protocol)) return null;
@@ -86,18 +118,67 @@ function validateAndCleanUrl(url: string): string | null {
     const trackingParams = [
       "srsltid", "utm_source", "utm_medium", "utm_campaign",
       "utm_content", "utm_term", "ref", "affiliate_id", "click_id",
-      "gclid", "fbclid", "msclkid",
+      "gclid", "fbclid", "msclkid", "sa", "ved", "usg", "source", "oq",
     ];
     trackingParams.forEach((param) => parsed.searchParams.delete(param));
 
     // Remove trailing slash for consistency
-    let cleaned = parsed.toString();
-    if (cleaned.endsWith("/")) cleaned = cleaned.slice(0, -1);
+    let result = parsed.toString();
+    if (result.endsWith("/")) result = result.slice(0, -1);
 
-    return cleaned;
+    return result;
   } catch {
     return null;
   }
+}
+
+// ─── Relevance Scoring ───
+function computeRelevanceScore(
+  name: string,
+  snippet: string,
+  query: string
+): number {
+  const queryLower = query.toLowerCase().trim();
+  const textLower = `${name} ${snippet}`.toLowerCase();
+
+  // Split query into significant words (length > 2)
+  const queryWords = queryLower.split(/\s+/).filter((w) => w.length > 2);
+  if (queryWords.length === 0) return 1;
+
+  let score = 0;
+
+  // Full query match in name = highest relevance
+  if (name.toLowerCase().includes(queryLower)) {
+    score += 10;
+  }
+
+  // Full query match in snippet
+  if (textLower.includes(queryLower)) {
+    score += 5;
+  }
+
+  // Individual word matches
+  let wordMatchCount = 0;
+  for (const word of queryWords) {
+    if (textLower.includes(word)) {
+      wordMatchCount++;
+    }
+  }
+
+  // Proportion of query words found (0 to 1)
+  score += (wordMatchCount / queryWords.length) * 8;
+
+  // Penalize if it's an accessory
+  if (isLikelyAccessory(name, snippet)) {
+    score -= 15;
+  }
+
+  // Bonus if the name starts with the product name
+  if (name.toLowerCase().startsWith(queryLower.split(" ")[0])) {
+    score += 3;
+  }
+
+  return score;
 }
 
 // ─── Search Query Generation ───
@@ -105,7 +186,7 @@ function generateSearchQueries(product: string): string[] {
   const q = product.trim();
   return [
     `${q} price in Bangladesh buy`,
-    `${q} startech ryans best price BD`,
+    `${q} best price BD buy online -daraz -facebook`,
   ];
 }
 
@@ -326,7 +407,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Filter blocked domains + validate URLs
+    // Filter blocked domains + validate URLs + clean URLs
     allResults = allResults
       .filter((r) => !isBlockedDomain(r.url))
       .filter((r) => validateAndCleanUrl(r.url) !== null)
@@ -343,18 +424,29 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // STEP 2: Regex price extraction
-    const queryWords = sanitizedQuery.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-    const relevantResults = allResults.filter((r) => {
-      const text = `${r.name} ${r.snippet}`.toLowerCase();
-      return queryWords.some((w) => text.includes(w));
-    });
-    const quickProducts = extractPricesFromSnippets(
-      relevantResults.length > 0 ? relevantResults : allResults
-    );
+    // STEP 2: Compute relevance scores for all results
+    const scoredResults = allResults.map((r) => ({
+      ...r,
+      relevance: computeRelevanceScore(r.name, r.snippet, sanitizedQuery),
+    }));
 
-    // STEP 3: LLM extraction for deeper results
-    const resultsWithoutPrices = allResults.filter(
+    // Sort by relevance (descending) - most relevant first
+    scoredResults.sort((a, b) => b.relevance - a.relevance);
+
+    // STEP 3: Filter out clearly irrelevant results (relevance < 1)
+    const minRelevance = 1;
+    let relevantResults = scoredResults.filter((r) => r.relevance >= minRelevance);
+
+    // If we filtered too aggressively, fall back to top results by relevance
+    if (relevantResults.length === 0) {
+      relevantResults = scoredResults.slice(0, 10);
+    }
+
+    // STEP 4: Extract prices from relevant results using regex
+    const quickProducts = extractPricesFromSnippets(relevantResults);
+
+    // STEP 5: LLM extraction for deeper results (with improved prompt)
+    const resultsWithoutPrices = relevantResults.filter(
       (r) => !quickProducts.some((qp) => qp.url === r.url)
     );
 
@@ -362,10 +454,10 @@ export async function POST(request: NextRequest) {
 
     if (resultsWithoutPrices.length > 0 || quickProducts.length < 3) {
       try {
-        const resultsToSend = quickProducts.length < 3 ? allResults : resultsWithoutPrices;
+        const resultsToSend = quickProducts.length < 3 ? relevantResults : resultsWithoutPrices;
         const searchContext = resultsToSend
           .slice(0, 12)
-          .map((r: { name: string; snippet: string; url: string; host_name: string }, i: number) =>
+          .map((r: { name: string; snippet: string; url: string; host_name: string; relevance?: number }, i: number) =>
             `[${i + 1}] Title: ${r.name}\nSnippet: ${r.snippet}\nURL: ${r.url}\nSource: ${r.host_name}`
           )
           .join("\n\n");
@@ -373,18 +465,19 @@ export async function POST(request: NextRequest) {
         const extractionPrompt = `Extract product listings with prices from these search results for the query "${sanitizedQuery}".
 
 CRITICAL RULES:
-1. ONLY include products relevant to "${sanitizedQuery}". Skip unrelated products.
+1. ONLY include products that are ACTUALLY the "${sanitizedQuery}" device/product itself. Do NOT include accessories like cases, covers, chargers, screen protectors, cables, earbuds, stands, or any add-on products.
 2. ONLY include products available in Bangladesh (BDT). Skip Myanmar, Nepal, India, Pakistan.
 3. DO NOT include results from Daraz, Facebook Marketplace, Bikroy, YouTube, or social media.
 4. ALWAYS prefer the OFFER/SALE/DISCOUNT price. If "was X now Y" or "original X, current Y", use LOWER as "price", HIGHER as "originalPrice".
 5. Look for ANY price format - BDT, ৳, Tk, taka, or USD/INR (convert: 1 USD ≈ 110 BDT, 1 INR ≈ 1.3 BDT).
 6. If a price range is given (e.g. "BDT 46,500 to BDT 164,000"), use lower as price, higher as originalPrice.
 7. Determine condition: "new" if brand new/sealed/warranty, "used" if second hand/refurbished/sold/pre-owned.
-8. The "url" field MUST be the EXACT product page URL from the results. Do NOT modify or fabricate URLs.
-9. Each result: {"name":"product name","price":offer_price_BDT,"originalPrice":original_BDT_or_null,"currency":"BDT","store":"store name","url":"exact url","snippet":"brief desc","condition":"new" or "used"}
+8. The "url" field MUST be the EXACT product page URL from the results. Do NOT modify or fabricate URLs. The URL must be the direct link to the product page, not a search page or category page.
+9. Each result: {"name":"product name","price":offer_price_BDT,"originalPrice":original_BDT_or_null,"currency":"BDT","store":"store name","url":"exact url from results","snippet":"brief desc","condition":"new" or "used"}
 10. Remove commas from numbers. Skip if no price can be inferred.
 11. Deduplicate - if same store appears twice, keep the more specific result.
 12. Return ONLY a JSON array. Sort by price ascending.
+13. IMPORTANT: If a product name contains words like "case", "cover", "protector", "charger", "cable", "adapter", "earbuds", "headphone", "stand", "holder" combined with "${sanitizedQuery}", it is an ACCESSORY, NOT the product itself. SKIP it.
 
 Results:
 ${searchContext}`;
@@ -418,7 +511,7 @@ ${searchContext}`;
       }
     }
 
-    // STEP 4: Merge & deduplicate
+    // STEP 6: Merge & deduplicate
     const mergedMap = new Map<string, ProductResult>();
 
     for (const p of quickProducts) {
@@ -448,19 +541,37 @@ ${searchContext}`;
       }
     }
 
-    // STEP 5: Filter accessories
+    // STEP 7: Filter accessories and irrelevant prices using smart clustering
     let validProducts = Array.from(mergedMap.values());
+
+    // Remove obvious accessories by name
+    validProducts = validProducts.filter((p) => !isLikelyAccessory(p.name, p.snippet));
+
+    // Smart price filtering: remove outliers that are likely accessories
     if (validProducts.length > 3) {
       const prices = validProducts.map((p) => p.price).sort((a, b) => a - b);
+
+      // Calculate price clusters using a simple approach:
+      // Find the median, then remove anything below 30% of median
       const medianPrice = prices[Math.floor(prices.length / 2)];
-      validProducts = validProducts.filter((p) => p.price >= medianPrice * 0.1);
+
+      // More aggressive: use the 25th percentile as the lower bound
+      const p25 = prices[Math.floor(prices.length * 0.25)];
+
+      // The minimum acceptable price is 30% of the 25th percentile price
+      // This ensures we don't remove legitimate but cheaper products
+      // but we do remove obvious accessories (which are usually < 10% of the product price)
+      const minAcceptablePrice = p25 * 0.3;
+
+      validProducts = validProducts.filter((p) => p.price >= minAcceptablePrice);
     }
 
-    // STEP 6: Apply condition filter
+    // STEP 8: Apply condition filter
     if (conditionFilter !== "all") {
       validProducts = validProducts.filter((p) => p.condition === conditionFilter);
     }
 
+    // Sort by price ascending (lowest first)
     validProducts.sort((a, b) => a.price - b.price);
 
     // CACHE: Store results
