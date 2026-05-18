@@ -70,6 +70,25 @@ function decodeDuckDuckGoRedirect(url: string): string {
   return url;
 }
 
+function decodeBingRedirect(url: string): string {
+  try {
+    const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
+    const parsed = new URL(normalizedUrl);
+    const encodedTarget = parsed.searchParams.get("u");
+    if (!encodedTarget) return url;
+
+    const base64Target = encodedTarget.startsWith("a1") ? encodedTarget.slice(2) : encodedTarget;
+    const paddedBase64 = base64Target.replace(/-/g, "+").replace(/_/g, "/");
+    const padding = "=".repeat((4 - (paddedBase64.length % 4)) % 4);
+    const decodedTarget = Buffer.from(`${paddedBase64}${padding}`, "base64").toString("utf8");
+    if (decodedTarget.startsWith("http")) return decodedTarget;
+  } catch {
+    // Return the original URL if it cannot be decoded.
+  }
+
+  return url;
+}
+
 function getZaiConfig() {
   const apiKey = process.env.ZAI_API_KEY;
   const baseUrl = process.env.ZAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4";
@@ -113,7 +132,7 @@ async function invokeChatCompletion(prompt: string): Promise<string> {
 async function fetchSearchResults(query: string): Promise<
   { name: string; snippet: string; url: string; host_name: string }[]
 > {
-  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US&cc=US`;
   const response = await fetch(searchUrl, {
     headers: {
       "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -127,11 +146,11 @@ async function fetchSearchResults(query: string): Promise<
 
   const html = await response.text();
   const results: { name: string; snippet: string; url: string; host_name: string }[] = [];
-  const resultRegex = /<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+  const resultRegex = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>[\s\S]*?<div class="b_caption"[^>]*><p[^>]*>([\s\S]*?)<\/p>/gi;
 
   let match: RegExpExecArray | null;
   while ((match = resultRegex.exec(html)) && results.length < 20) {
-    const cleanedUrl = validateAndCleanUrl(decodeDuckDuckGoRedirect(decodeHtmlEntities(match[1])));
+    const cleanedUrl = validateAndCleanUrl(decodeBingRedirect(decodeHtmlEntities(match[1])));
     if (!cleanedUrl || isBlockedDomain(cleanedUrl)) continue;
 
     const name = stripHtmlTags(match[2]);
