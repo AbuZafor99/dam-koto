@@ -132,7 +132,7 @@ async function invokeChatCompletion(prompt: string): Promise<string> {
 async function fetchSearchResults(query: string): Promise<
   { name: string; snippet: string; url: string; host_name: string }[]
 > {
-  const searchUrl = `https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en-US&cc=US`;
+  const searchUrl = `https://www.bing.com/search?format=rss&q=${encodeURIComponent(query)}`;
   const response = await fetch(searchUrl, {
     headers: {
       "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -144,18 +144,17 @@ async function fetchSearchResults(query: string): Promise<
     throw new Error(`Search request failed with status ${response.status}`);
   }
 
-  const html = await response.text();
   const results: { name: string; snippet: string; url: string; host_name: string }[] = [];
-  const resultRegex = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>[\s\S]*?<div class="b_caption"[^>]*><p[^>]*>([\s\S]*?)<\/p>/gi;
+
+  const rss = await response.text();
+  const itemRegex = /<item>[\s\S]*?<title>([\s\S]*?)<\/title>[\s\S]*?<link>([\s\S]*?)<\/link>[\s\S]*?<description>([\s\S]*?)<\/description>[\s\S]*?<\/item>/gi;
 
   let match: RegExpExecArray | null;
-  while ((match = resultRegex.exec(html)) && results.length < 20) {
-    const cleanedUrl = validateAndCleanUrl(decodeBingRedirect(decodeHtmlEntities(match[1])));
-    if (!cleanedUrl || isBlockedDomain(cleanedUrl)) continue;
-
-    const name = stripHtmlTags(match[2]);
+  while ((match = itemRegex.exec(rss)) && results.length < 20) {
+    const name = stripHtmlTags(match[1]);
+    const cleanedUrl = validateAndCleanUrl(stripHtmlTags(match[2]));
     const snippet = stripHtmlTags(match[3]);
-    if (!name) continue;
+    if (!name || !cleanedUrl || isBlockedDomain(cleanedUrl)) continue;
 
     results.push({
       name: name.slice(0, 200),
@@ -163,6 +162,27 @@ async function fetchSearchResults(query: string): Promise<
       url: cleanedUrl,
       host_name: new URL(cleanedUrl).hostname.replace(/^www\./, ""),
     });
+  }
+
+  if (results.length === 0) {
+    const html = rss;
+    const resultRegex = /<li class="b_algo"[\s\S]*?<h2[^>]*><a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a><\/h2>[\s\S]*?<div class="b_caption"[^>]*><p[^>]*>([\s\S]*?)<\/p>/gi;
+
+    while ((match = resultRegex.exec(html)) && results.length < 20) {
+      const cleanedUrl = validateAndCleanUrl(decodeBingRedirect(decodeHtmlEntities(match[1])));
+      if (!cleanedUrl || isBlockedDomain(cleanedUrl)) continue;
+
+      const name = stripHtmlTags(match[2]);
+      const snippet = stripHtmlTags(match[3]);
+      if (!name) continue;
+
+      results.push({
+        name: name.slice(0, 200),
+        snippet: snippet.slice(0, 300),
+        url: cleanedUrl,
+        host_name: new URL(cleanedUrl).hostname.replace(/^www\./, ""),
+      });
+    }
   }
 
   return deduplicateResults(results);
