@@ -307,10 +307,59 @@ function computeRelevanceScore(
 // ─── Search Query Generation ───
 function generateSearchQueries(product: string): string[] {
   const q = product.trim();
+  const productName = q.toLowerCase();
+  const extraTerms = productName.includes("iphone") || productName.includes("ipad") || productName.includes("macbook")
+    ? "official price"
+    : "price";
+
   return [
-    `${q} price in Bangladesh buy`,
-    `${q} best price BD buy online -daraz -facebook`,
+    `${q} ${extraTerms} in Bangladesh`,
+    `${q} price in BD buy online -daraz -facebook`,
+    `${q} BDT Bangladesh`,
+    `${q} site:*.com price Bangladesh`,
   ];
+}
+
+function stripScriptAndStyleTags(html: string): string {
+  return html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ");
+}
+
+async function fetchPriceFromProductPage(result: { name: string; snippet: string; url: string; host_name: string }) {
+  try {
+    const response = await fetch(result.url, {
+      headers: {
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "accept-language": "en-US,en;q=0.9",
+      },
+    });
+
+    if (!response.ok) return null;
+
+    const html = await response.text();
+    const pageText = stripHtmlTags(stripScriptAndStyleTags(html));
+    const priceResult = extractOfferPriceFromText(pageText);
+    const price = priceResult.price;
+    if (price === null) return null;
+
+    const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    const title = titleMatch ? stripHtmlTags(titleMatch[1]) : result.name;
+    const name = title.length >= 5 ? title : result.name;
+
+    return {
+      name: name.slice(0, 200),
+      price: Math.round(price * 100) / 100,
+      originalPrice: priceResult.originalPrice !== null ? Math.round(priceResult.originalPrice * 100) / 100 : null,
+      currency: "BDT",
+      store: result.host_name.replace(/^www\./, ""),
+      url: result.url,
+      snippet: pageText.slice(0, 300),
+      condition: detectCondition(name, pageText),
+    } satisfies ProductResult;
+  } catch {
+    return null;
+  }
 }
 
 // ─── Deduplication ───
@@ -566,6 +615,22 @@ export async function POST(request: NextRequest) {
     // STEP 4: Extract prices from relevant results using regex
     const quickProducts = extractPricesFromSnippets(relevantResults);
 
+    // STEP 4b: If snippets are too thin, inspect top product pages directly for prices.
+    let pageProducts: ProductResult[] = [];
+    if (quickProducts.length < 3) {
+      const pageCandidates = relevantResults
+        .filter((r) => !quickProducts.some((qp) => qp.url === r.url))
+        .slice(0, 8);
+
+      const pageFetches = await Promise.allSettled(
+        pageCandidates.map((candidate) => fetchPriceFromProductPage(candidate))
+      );
+
+      pageProducts = pageFetches
+        .flatMap((entry) => (entry.status === "fulfilled" && entry.value ? [entry.value] : []))
+        .filter((product) => product.price > 0);
+    }
+
     // STEP 5: LLM extraction for deeper results (with improved prompt)
     const resultsWithoutPrices = relevantResults.filter(
       (r) => !quickProducts.some((qp) => qp.url === r.url)
@@ -628,6 +693,13 @@ ${searchContext}`;
 
     for (const p of quickProducts) {
       mergedMap.set(p.url.toLowerCase(), p);
+    }
+
+    for (const p of pageProducts) {
+      const key = p.url.toLowerCase();
+      if (!mergedMap.has(key)) {
+        mergedMap.set(key, p);
+      }
     }
 
     for (const p of llmProducts) {
