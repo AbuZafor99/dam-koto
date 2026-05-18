@@ -18,6 +18,8 @@ const BLOCKED_DOMAINS = [
   "youtu.be",
   "m.youtube.com",
   "facebook.com",
+  "fb.com",
+  "m.facebook.com",
   "instagram.com",
   "twitter.com",
   "tiktok.com",
@@ -27,6 +29,12 @@ const BLOCKED_DOMAINS = [
   "linkedin.com",
   "wikipedia.org",
   "medium.com",
+  "daraz.com.bd",
+  "daraz.com",
+  "daraz.pk",
+  "daraz.lk",
+  "daraz.com.np",
+  "bikroy.com",
 ];
 
 function isBlockedDomain(url: string): boolean {
@@ -44,7 +52,7 @@ function generateSearchQueries(product: string): string[] {
   const q = product.trim();
   return [
     `${q} price in Bangladesh buy`,
-    `${q} daraz startech best price BD`,
+    `${q} startech ryans best price BD`,
   ];
 }
 
@@ -356,14 +364,15 @@ export async function POST(request: NextRequest) {
 CRITICAL RULES:
 1. ONLY include products that are relevant to the query "${sanitizedQuery}". Skip unrelated products.
 2. ONLY include products available in Bangladesh (BDT currency). Skip results from Myanmar, Nepal, India, Pakistan or other countries.
-3. ALWAYS prefer the OFFER/SALE/DISCOUNT price over the original price. If both "was X now Y" or "original X, current Y" are shown, use the LOWER/OFFER price as "price" and the HIGHER/ORIGINAL price as "originalPrice".
-4. Look for ANY price format - BDT, ৳, Tk, taka, or even USD/INR (convert: 1 USD ≈ 110 BDT, 1 INR ≈ 1.3 BDT).
-5. If a price range is given (e.g. "BDT 46,500 to BDT 164,000"), use the lower value as price and the higher as originalPrice.
-6. Determine condition: "new" if brand new/sealed/warranty, "used" if second hand/refurbished/sold/pre-owned/old.
-7. Each result: {"name":"product name","price":offer_price_in_BDT,"originalPrice":original_price_in_BDT_or_null,"currency":"BDT","store":"store name","url":"full url","snippet":"brief desc","condition":"new" or "used"}
-8. Remove commas from numbers. Skip only if absolutely no price can be inferred.
-9. Deduplicate - if same store appears twice, keep the more specific result.
-10. Return ONLY a JSON array. Sort by price ascending.
+3. DO NOT include results from Daraz, Facebook Marketplace, Bikroy, YouTube, or social media sites.
+4. ALWAYS prefer the OFFER/SALE/DISCOUNT price over the original price. If both "was X now Y" or "original X, current Y" are shown, use the LOWER/OFFER price as "price" and the HIGHER/ORIGINAL price as "originalPrice".
+5. Look for ANY price format - BDT, ৳, Tk, taka, or even USD/INR (convert: 1 USD ≈ 110 BDT, 1 INR ≈ 1.3 BDT).
+6. If a price range is given (e.g. "BDT 46,500 to BDT 164,000"), use the lower value as price and the higher as originalPrice.
+7. Determine condition: "new" if brand new/sealed/warranty, "used" if second hand/refurbished/sold/pre-owned/old.
+8. Each result: {"name":"product name","price":offer_price_in_BDT,"originalPrice":original_price_in_BDT_or_null,"currency":"BDT","store":"store name","url":"full url","snippet":"brief desc","condition":"new" or "used"}
+9. Remove commas from numbers. Skip only if absolutely no price can be inferred.
+10. Deduplicate - if same store appears twice, keep the more specific result.
+11. Return ONLY a JSON array. Sort by price ascending.
 
 Results:
 ${searchContext}`;

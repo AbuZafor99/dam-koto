@@ -12,30 +12,37 @@ import {
   TrendingDown,
   ShoppingCart,
   Star,
-  ArrowRight,
   RefreshCw,
   Globe,
   Zap,
   Clock,
-  ChevronDown,
   X,
   Sparkles,
   Store,
+  Filter,
+  Package,
+  PackageCheck,
+  Tag,
 } from "lucide-react";
+
+type ConditionFilter = "all" | "new" | "used";
 
 interface ProductResult {
   name: string;
   price: number;
+  originalPrice: number | null;
   currency: string;
   store: string;
   url: string;
   snippet: string;
+  condition: "new" | "used";
 }
 
 interface SearchResponse {
   products: ProductResult[];
   query: string;
   totalResults: number;
+  conditionFilter?: string;
   message?: string;
   error?: string;
 }
@@ -108,42 +115,43 @@ function getRankBadge(index: number) {
 
 function getStoreIcon(store: string): string {
   const lower = store.toLowerCase();
-  if (lower.includes("daraz")) return "🛒";
-  if (lower.includes("rokomari")) return "📚";
   if (lower.includes("startech")) return "💻";
   if (lower.includes("ryans")) return "🖥️";
+  if (lower.includes("rokomari")) return "📚";
   if (lower.includes("pickaboo")) return "🎯";
   if (lower.includes("gadget")) return "📱";
-  if (lower.includes("amazon")) return "📦";
-  if (lower.includes("flipkart")) return "🛍️";
-  if (lower.includes("bdshop")) return "🏪";
-  if (lower.includes("othoba")) return "🏪";
   if (lower.includes("walton")) return "🏭";
   if (lower.includes("apple")) return "🍎";
   if (lower.includes("samsung")) return "📱";
+  if (lower.includes("istock")) return "📦";
+  if (lower.includes("dazzle")) return "✨";
+  if (lower.includes("aiman")) return "🏪";
+  if (lower.includes("hns")) return "🔧";
   return "🏪";
 }
 
 function getStoreColor(store: string): string {
   const lower = store.toLowerCase();
-  if (lower.includes("daraz")) return "bg-pink-50 text-pink-700 border-pink-200";
   if (lower.includes("startech")) return "bg-blue-50 text-blue-700 border-blue-200";
   if (lower.includes("ryans")) return "bg-purple-50 text-purple-700 border-purple-200";
   if (lower.includes("rokomari")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
   if (lower.includes("pickaboo")) return "bg-orange-50 text-orange-700 border-orange-200";
+  if (lower.includes("applegadgets")) return "bg-gray-50 text-gray-700 border-gray-300";
+  if (lower.includes("istock")) return "bg-sky-50 text-sky-700 border-sky-200";
+  if (lower.includes("dazzle")) return "bg-pink-50 text-pink-700 border-pink-200";
   return "bg-gray-50 text-gray-700 border-gray-200";
 }
 
 const PROGRESS_STEPS = [
   { label: "Searching Google...", icon: Globe },
   { label: "Scanning Bangladeshi stores...", icon: Store },
-  { label: "Extracting prices...", icon: ShoppingCart },
+  { label: "Extracting offer prices...", icon: Tag },
   { label: "Ranking by best price...", icon: TrendingDown },
 ];
 
 export default function Home() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ProductResult[]>([]);
+  const [allResults, setAllResults] = useState<ProductResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,8 +160,14 @@ export default function Home() {
   const [progressStep, setProgressStep] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [filteredSuggestions, setFilteredSuggestions] = useState<string[]>([]);
+  const [conditionFilter, setConditionFilter] = useState<ConditionFilter>("all");
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Apply client-side condition filter
+  const results = conditionFilter === "all"
+    ? allResults
+    : allResults.filter((r) => r.condition === conditionFilter);
 
   // Progress animation during search
   useEffect(() => {
@@ -203,10 +217,11 @@ export default function Home() {
 
       setQuery(q);
       setShowSuggestions(false);
+      setConditionFilter("all");
       setLoading(true);
       setSearched(true);
       setError(null);
-      setResults([]);
+      setAllResults([]);
       setCurrentQuery(q);
       const startTime = Date.now();
 
@@ -214,7 +229,7 @@ export default function Home() {
         const res = await fetch("/api/search", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: q }),
+          body: JSON.stringify({ query: q, condition: "all" }),
         });
 
         const data: SearchResponse = await res.json();
@@ -222,19 +237,19 @@ export default function Home() {
 
         if (data.error) {
           setError(data.error);
-          setResults([]);
+          setAllResults([]);
         } else if (data.products.length === 0) {
           setError(
             data.message ||
-              `No prices found for "${q}". Try a more specific product name like "Samsung Galaxy S24 Ultra" or "iPad Air M1 256GB".`
+              `No prices found for "${q}". Try a more specific product name.`
           );
-          setResults([]);
+          setAllResults([]);
         } else {
-          setResults(data.products);
+          setAllResults(data.products);
         }
       } catch {
         setError("Network error. Please check your connection and try again.");
-        setResults([]);
+        setAllResults([]);
       } finally {
         setLoading(false);
       }
@@ -255,11 +270,15 @@ export default function Home() {
   const clearSearch = () => {
     setQuery("");
     setSearched(false);
-    setResults([]);
+    setAllResults([]);
     setError(null);
     setCurrentQuery("");
+    setConditionFilter("all");
     inputRef.current?.focus();
   };
+
+  const newCount = allResults.filter((r) => r.condition === "new").length;
+  const usedCount = allResults.filter((r) => r.condition === "used").length;
 
   const lowestPrice = results.length > 0 ? results[0].price : 0;
   const highestPrice =
@@ -301,7 +320,6 @@ export default function Home() {
             searched ? "py-6 md:py-8" : "py-14 md:py-20"
           }`}
         >
-          {/* Background decoration */}
           <div className="absolute inset-0 -z-10">
             <div className="absolute top-0 left-1/4 w-72 h-72 bg-green-100 rounded-full blur-3xl opacity-40" />
             <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-red-100 rounded-full blur-3xl opacity-30" />
@@ -324,7 +342,7 @@ export default function Home() {
                 </h2>
                 <p className="text-lg text-muted-foreground max-w-xl mx-auto">
                   Search any product and we scan multiple Bangladeshi stores
-                  instantly. Save money on every purchase.
+                  instantly. Always showing offer prices. Save money on every purchase.
                 </p>
               </div>
             )}
@@ -332,18 +350,18 @@ export default function Home() {
             {searched && !loading && (
               <div className="mb-4">
                 <h2 className="text-xl md:text-2xl font-bold text-foreground">
-                  {results.length > 0
+                  {allResults.length > 0
                     ? "Prices for"
                     : "Searching for"}{" "}
                   <span className="text-green-600">
                     &ldquo;{currentQuery}&rdquo;
                   </span>
                 </h2>
-                {results.length > 0 && (
+                {allResults.length > 0 && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    Found {results.length} prices across{" "}
-                    {new Set(results.map((r) => r.store)).size} store
-                    {new Set(results.map((r) => r.store)).size > 1 ? "s" : ""}
+                    Found {allResults.length} prices across{" "}
+                    {new Set(allResults.map((r) => r.store)).size} store
+                    {new Set(allResults.map((r) => r.store)).size > 1 ? "s" : ""}
                   </p>
                 )}
               </div>
@@ -377,7 +395,7 @@ export default function Home() {
                     </button>
                   )}
 
-                  {/* Autocomplete Suggestions */}
+                  {/* Autocomplete */}
                   {showSuggestions && filteredSuggestions.length > 0 && !loading && (
                     <div
                       ref={suggestionsRef}
@@ -420,9 +438,7 @@ export default function Home() {
             {/* Popular searches */}
             {!searched && (
               <div className="mt-6 space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
-                <p className="text-sm text-muted-foreground">
-                  Try searching:
-                </p>
+                <p className="text-sm text-muted-foreground">Try searching:</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {POPULAR_SEARCHES.map((term) => (
                     <button
@@ -444,10 +460,9 @@ export default function Home() {
 
         {/* Results Section */}
         <section className="max-w-6xl mx-auto px-4 pb-16">
-          {/* Loading State with Progress */}
+          {/* Loading State */}
           {loading && (
             <div className="space-y-5">
-              {/* Progress Indicator */}
               <div className="bg-white border border-border rounded-xl p-4 shadow-sm">
                 <div className="flex items-center gap-3 mb-3">
                   <Sparkles className="w-5 h-5 text-green-600 animate-pulse" />
@@ -488,15 +503,11 @@ export default function Home() {
                   <div
                     className="bg-green-500 h-full rounded-full transition-all duration-1000 ease-out"
                     style={{
-                      width: `${
-                        ((progressStep + 1) / PROGRESS_STEPS.length) * 100
-                      }%`,
+                      width: `${((progressStep + 1) / PROGRESS_STEPS.length) * 100}%`,
                     }}
                   />
                 </div>
               </div>
-
-              {/* Skeleton Cards */}
               {[1, 2, 3, 4].map((i) => (
                 <Card key={i} className="overflow-hidden">
                   <CardContent className="p-4 md:p-5">
@@ -527,9 +538,7 @@ export default function Home() {
                 {error}
               </p>
               <div className="mt-6 flex flex-wrap justify-center gap-2">
-                <p className="w-full text-xs text-muted-foreground mb-2">
-                  Try one of these:
-                </p>
+                <p className="w-full text-xs text-muted-foreground mb-2">Try one of these:</p>
                 {["iPad Air M1", "Samsung Galaxy S24", "iPhone 15", "MacBook Air M2"].map(
                   (term) => (
                     <button
@@ -551,61 +560,102 @@ export default function Home() {
           {/* Results */}
           {!loading && results.length > 0 && (
             <div className="space-y-5 animate-in fade-in slide-in-from-bottom-3 duration-500">
-              {/* Stats Bar */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                <div className="flex items-center gap-4 sm:gap-6">
-                  <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                      Results
-                    </p>
-                    <p className="text-xl font-bold text-foreground">
-                      {results.length}
-                    </p>
+              {/* Stats Bar + Filter */}
+              <div className="space-y-3">
+                {/* Stats */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
+                  <div className="flex items-center gap-4 sm:gap-6">
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Results
+                      </p>
+                      <p className="text-xl font-bold text-foreground">
+                        {results.length}
+                      </p>
+                    </div>
+                    <div className="w-px h-8 bg-green-200" />
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Lowest
+                      </p>
+                      <p className="text-xl font-bold text-emerald-600">
+                        ৳{formatPrice(lowestPrice)}
+                      </p>
+                    </div>
+                    <div className="w-px h-8 bg-green-200" />
+                    <div>
+                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
+                        Highest
+                      </p>
+                      <p className="text-xl font-bold text-red-500">
+                        ৳{formatPrice(highestPrice)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="w-px h-8 bg-green-200" />
-                  <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                      Lowest
-                    </p>
-                    <p className="text-xl font-bold text-emerald-600">
-                      ৳{formatPrice(lowestPrice)}
-                    </p>
-                  </div>
-                  <div className="w-px h-8 bg-green-200" />
-                  <div>
-                    <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                      Highest
-                    </p>
-                    <p className="text-xl font-bold text-red-500">
-                      ৳{formatPrice(highestPrice)}
-                    </p>
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Clock className="w-3 h-3" />
+                    {((searchTime / 1000) || 0).toFixed(1)}s
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <Clock className="w-3 h-3" />
-                  {((searchTime / 1000) || 0).toFixed(1)}s
-                </div>
-              </div>
 
-              {/* Savings callout */}
-              {results.length > 1 && savings > 0 && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2 text-sm">
-                  <Zap className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                  <span className="text-emerald-800">
-                    You could save up to{" "}
-                    <strong className="text-emerald-900">
-                      ৳{formatPrice(savings)}
-                    </strong>{" "}
-                    by choosing the best price!
-                  </span>
+                {/* Condition Filter */}
+                <div className="flex items-center gap-2">
+                  <Filter className="w-4 h-4 text-muted-foreground" />
+                  <span className="text-sm text-muted-foreground font-medium">Filter:</span>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setConditionFilter("all")}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium ${
+                        conditionFilter === "all"
+                          ? "bg-green-600 text-white border-green-600 shadow-sm"
+                          : "bg-white text-muted-foreground border-border hover:border-green-300 hover:text-green-700"
+                      }`}
+                    >
+                      All ({allResults.length})
+                    </button>
+                    <button
+                      onClick={() => setConditionFilter("new")}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium flex items-center gap-1 ${
+                        conditionFilter === "new"
+                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                          : "bg-white text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-700"
+                      }`}
+                    >
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      New ({newCount})
+                    </button>
+                    <button
+                      onClick={() => setConditionFilter("used")}
+                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium flex items-center gap-1 ${
+                        conditionFilter === "used"
+                          ? "bg-amber-600 text-white border-amber-600 shadow-sm"
+                          : "bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-amber-700"
+                      }`}
+                    >
+                      <Package className="w-3.5 h-3.5" />
+                      Used ({usedCount})
+                    </button>
+                  </div>
                 </div>
-              )}
+
+                {/* Savings callout */}
+                {results.length > 1 && savings > 0 && (
+                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2 text-sm">
+                    <Zap className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-emerald-800">
+                      You could save up to{" "}
+                      <strong className="text-emerald-900">৳{formatPrice(savings)}</strong>{" "}
+                      by choosing the best price!
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {/* Product Cards */}
               <div className="space-y-2.5">
                 {results.map((product, index) => (
                   <a
-                    key={index}
+                    key={product.url + index}
                     href={product.url}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -650,14 +700,23 @@ export default function Home() {
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
                                   <Badge
                                     variant="outline"
-                                    className={`text-[11px] font-normal ${getStoreColor(
-                                      product.store
-                                    )}`}
+                                    className={`text-[11px] font-normal ${getStoreColor(product.store)}`}
                                   >
                                     <ShoppingCart className="w-3 h-3 mr-0.5" />
                                     {product.store}
                                   </Badge>
                                   {getRankBadge(index)}
+                                  {product.condition === "used" ? (
+                                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px]">
+                                      <Package className="w-3 h-3 mr-0.5" />
+                                      Used
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px]">
+                                      <PackageCheck className="w-3 h-3 mr-0.5" />
+                                      New
+                                    </Badge>
+                                  )}
                                 </div>
                                 {product.snippet && (
                                   <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
@@ -669,21 +728,33 @@ export default function Home() {
                               {/* Price */}
                               <div className="flex items-center gap-2 flex-shrink-0 sm:ml-4">
                                 <div className="text-right">
+                                  {/* Offer price (main) */}
                                   <p
-                                    className={`text-lg md:text-xl font-bold ${getPriceColor(
-                                      index,
-                                      results.length
-                                    )}`}
+                                    className={`text-lg md:text-xl font-bold ${getPriceColor(index, results.length)}`}
                                   >
                                     ৳{formatPrice(product.price)}
                                   </p>
+                                  {/* Original price (strikethrough) */}
+                                  {product.originalPrice && product.originalPrice > product.price && (
+                                    <p className="text-[11px] text-muted-foreground line-through">
+                                      ৳{formatPrice(product.originalPrice)}
+                                    </p>
+                                  )}
+                                  {/* Price difference */}
                                   {index > 0 && lowestPrice > 0 && (
                                     <p className="text-[11px] text-red-400">
-                                      +৳
-                                      {formatPrice(
-                                        product.price - lowestPrice
-                                      )}{" "}
-                                      more
+                                      +৳{formatPrice(product.price - lowestPrice)} more
+                                    </p>
+                                  )}
+                                  {/* Discount percentage */}
+                                  {product.originalPrice && product.originalPrice > product.price && (
+                                    <p className="text-[11px] text-emerald-600 font-semibold">
+                                      {Math.round(
+                                        ((product.originalPrice - product.price) /
+                                          product.originalPrice) *
+                                          100
+                                      )}
+                                      % off
                                     </p>
                                   )}
                                 </div>
@@ -699,12 +770,32 @@ export default function Home() {
               </div>
 
               {/* Footer info */}
-              <div className="text-center text-xs text-muted-foreground pt-3">
+              <div className="text-center text-xs text-muted-foreground pt-3 space-y-1">
                 <p>
-                  Prices are indicative and may vary. Click on a product to visit
-                  the store for the latest price and availability.
+                  Showing offer/sale prices when available. Original prices shown with strikethrough.
+                </p>
+                <p>
+                  Click on a product to visit the store for the latest price and availability.
                 </p>
               </div>
+            </div>
+          )}
+
+          {/* No results after filter */}
+          {!loading && allResults.length > 0 && results.length === 0 && (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground text-sm">
+                No {conditionFilter} products found for &ldquo;{currentQuery}&rdquo;.
+                Try switching to a different filter.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setConditionFilter("all")}
+                className="mt-3"
+              >
+                Show All Products
+              </Button>
             </div>
           )}
 
