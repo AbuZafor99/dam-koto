@@ -336,7 +336,6 @@ function generateSearchQueries(product: string): string[] {
     `${q} ${extraTerms} in Bangladesh`,
     `${q} price in BD buy online -daraz -facebook`,
     `${q} BDT Bangladesh`,
-    `${q} site:*.com price Bangladesh`,
   ];
 }
 
@@ -588,12 +587,16 @@ export async function POST(request: NextRequest) {
     const searchQueries = generateSearchQueries(sanitizedQuery);
     let allResults: { name: string; snippet: string; url: string; host_name: string }[] = [];
 
-    for (const sq of searchQueries) {
-      try {
-        const resp = await fetchSearchResults(sq);
-        if (Array.isArray(resp)) allResults.push(...resp);
-      } catch (e) {
-        console.error("Search query failed:", sq, e);
+    const searchResponses = await Promise.allSettled(
+      searchQueries.map((sq) => fetchSearchResults(sq))
+    );
+
+    for (const [index, response] of searchResponses.entries()) {
+      const query = searchQueries[index];
+      if (response.status === "fulfilled") {
+        if (Array.isArray(response.value)) allResults.push(...response.value);
+      } else {
+        console.error("Search query failed:", query, response.reason);
       }
     }
 
@@ -635,12 +638,36 @@ export async function POST(request: NextRequest) {
     // STEP 4: Extract prices from relevant results using regex
     const quickProducts = extractPricesFromSnippets(relevantResults);
 
+    // FAST PATH: if we already have usable prices from snippets, return immediately.
+    // This keeps the common search path quick and avoids slower page fetches and LLM extraction.
+    if (quickProducts.length > 0) {
+      let fastProducts = quickProducts;
+
+      if (conditionFilter !== "all") {
+        fastProducts = fastProducts.filter((p) => p.condition === conditionFilter);
+      }
+
+      fastProducts.sort((a, b) => a.price - b.price);
+      searchCache.set(cacheKey, { data: fastProducts, expiresAt: Date.now() + CACHE_TTL });
+
+      return NextResponse.json(
+        { products: fastProducts, query: sanitizedQuery, totalResults: fastProducts.length, conditionFilter, fastPath: true },
+        {
+          headers: {
+            "X-Content-Type-Options": "nosniff",
+            "X-Frame-Options": "DENY",
+            "Cache-Control": "public, max-age=300",
+          },
+        }
+      );
+    }
+
     // STEP 4b: If snippets are too thin, inspect top product pages directly for prices.
     let pageProducts: ProductResult[] = [];
-    if (quickProducts.length < 3) {
+    if (quickProducts.length < 1) {
       const pageCandidates = relevantResults
         .filter((r) => !quickProducts.some((qp) => qp.url === r.url))
-        .slice(0, 8);
+        .slice(0, 4);
 
       const pageFetches = await Promise.allSettled(
         pageCandidates.map((candidate) => fetchPriceFromProductPage(candidate))
@@ -658,9 +685,9 @@ export async function POST(request: NextRequest) {
 
     let llmProducts: ProductResult[] = [];
 
-    if (resultsWithoutPrices.length > 0 || quickProducts.length < 3) {
+    if (resultsWithoutPrices.length > 0 && pageProducts.length === 0) {
       try {
-        const resultsToSend = quickProducts.length < 3 ? relevantResults : resultsWithoutPrices;
+        const resultsToSend = resultsWithoutPrices;
         const searchContext = resultsToSend
           .slice(0, 12)
           .map((r: { name: string; snippet: string; url: string; host_name: string; relevance?: number }, i: number) =>
