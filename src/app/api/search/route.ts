@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
 
 export interface ProductResult {
   name: string;
@@ -69,6 +68,46 @@ function decodeDuckDuckGoRedirect(url: string): string {
     // Return the original URL if it cannot be decoded.
   }
   return url;
+}
+
+function getZaiConfig() {
+  const apiKey = process.env.ZAI_API_KEY;
+  const baseUrl = process.env.ZAI_BASE_URL || "https://open.bigmodel.cn/api/paas/v4";
+
+  if (!apiKey) {
+    throw new Error("Missing ZAI_API_KEY environment variable.");
+  }
+
+  return { apiKey, baseUrl };
+}
+
+async function invokeChatCompletion(prompt: string): Promise<string> {
+  const { apiKey, baseUrl } = getZaiConfig();
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+      "X-Z-AI-From": "Z",
+    },
+    body: JSON.stringify({
+      messages: [
+        { role: "system", content: "Output only a valid JSON array of product objects. No markdown, no explanation, just the array." },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.1,
+      max_tokens: 2500,
+      thinking: { type: "disabled" },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Chat completion failed with status ${response.status}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || "[]";
 }
 
 async function fetchSearchResults(query: string): Promise<
@@ -457,8 +496,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const zai = await ZAI.create();
-
     // STEP 1: Search queries
     const searchQueries = generateSearchQueries(sanitizedQuery);
     let allResults: { name: string; snippet: string; url: string; host_name: string }[] = [];
@@ -547,16 +584,7 @@ CRITICAL RULES:
 Results:
 ${searchContext}`;
 
-        const completion = await zai.chat.completions.create({
-          messages: [
-            { role: "system", content: "Output only a valid JSON array of product objects. No markdown, no explanation, just the array." },
-            { role: "user", content: extractionPrompt },
-          ],
-          temperature: 0.1,
-          max_tokens: 2500,
-        });
-
-        const responseText = completion.choices?.[0]?.message?.content || "[]";
+        const responseText = await invokeChatCompletion(extractionPrompt);
         let cleanResponse = responseText.trim();
         if (cleanResponse.startsWith("```")) {
           cleanResponse = cleanResponse.replace(/^```(?:json)?\n?/, "").replace(/\n?```$/, "");
