@@ -3,7 +3,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,6 +22,10 @@ import {
   Package,
   PackageCheck,
   Tag,
+  Shield,
+  ArrowUpRight,
+  BadgePercent,
+  CircleDot,
 } from "lucide-react";
 
 type ConditionFilter = "all" | "new" | "used";
@@ -43,110 +46,53 @@ interface SearchResponse {
   query: string;
   totalResults: number;
   conditionFilter?: string;
+  cached?: boolean;
   message?: string;
   error?: string;
 }
 
 const POPULAR_SEARCHES = [
-  "Samsung Galaxy S24",
-  "iPad Air M1",
-  "iPhone 15",
-  "Laptop under 50000",
-  "Sony WH-1000XM5",
-  "Xiaomi Redmi Note 13",
-  "Walton AC 1.5 ton",
-  "LG TV 43 inch",
-  "Realme C67",
-  "MacBook Air M2",
+  "Samsung Galaxy S24", "iPad Air M1", "iPhone 15",
+  "Laptop under 50000", "Sony WH-1000XM5",
+  "Xiaomi Redmi Note 13", "Walton AC 1.5 ton", "MacBook Air M2",
 ];
 
 const SEARCH_SUGGESTIONS = [
-  "iPad Air M1",
-  "iPad Pro M4",
-  "iPhone 16 Pro Max",
-  "Samsung Galaxy S25 Ultra",
-  "OnePlus 12",
-  "MacBook Air M3",
-  "ASUS ROG Laptop",
-  "Sony WH-1000XM5",
-  "Apple Watch Ultra",
-  "AirPods Pro 2",
-  "Canon EOS R50",
-  "DJI Mini 4 Pro",
-  "PS5 Slim",
-  "Nintendo Switch OLED",
-  "Walton Washing Machine",
-  "Dell Monitor 27 inch",
-  "Logitech MX Master 3S",
-  "Razer DeathAdder V3",
+  "iPad Air M1", "iPad Pro M4", "iPhone 16 Pro Max",
+  "Samsung Galaxy S25 Ultra", "OnePlus 12", "MacBook Air M3",
+  "ASUS ROG Laptop", "Sony WH-1000XM5", "Apple Watch Ultra",
+  "AirPods Pro 2", "PS5 Slim", "Walton Washing Machine",
 ];
 
 function formatPrice(price: number): string {
   return price.toLocaleString("en-BD");
 }
 
-function getPriceColor(index: number, total: number): string {
-  if (index === 0) return "text-emerald-600";
-  if (index === total - 1 && total > 1) return "text-red-500";
-  return "text-foreground";
-}
-
-function getRankBadge(index: number) {
-  if (index === 0)
-    return (
-      <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100 text-[11px]">
-        <Star className="w-3 h-3 mr-0.5" /> Best Price
-      </Badge>
-    );
-  if (index === 1)
-    return (
-      <Badge className="bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-100 text-[11px]">
-        2nd Best
-      </Badge>
-    );
-  if (index === 2)
-    return (
-      <Badge className="bg-orange-100 text-orange-800 border-orange-300 hover:bg-orange-100 text-[11px]">
-        3rd Best
-      </Badge>
-    );
-  return null;
+function getDiscountPercent(price: number, original: number): number {
+  if (!original || original <= price) return 0;
+  return Math.round(((original - price) / original) * 100);
 }
 
 function getStoreIcon(store: string): string {
-  const lower = store.toLowerCase();
-  if (lower.includes("startech")) return "💻";
-  if (lower.includes("ryans")) return "🖥️";
-  if (lower.includes("rokomari")) return "📚";
-  if (lower.includes("pickaboo")) return "🎯";
-  if (lower.includes("gadget")) return "📱";
-  if (lower.includes("walton")) return "🏭";
-  if (lower.includes("apple")) return "🍎";
-  if (lower.includes("samsung")) return "📱";
-  if (lower.includes("istock")) return "📦";
-  if (lower.includes("dazzle")) return "✨";
-  if (lower.includes("aiman")) return "🏪";
-  if (lower.includes("hns")) return "🔧";
+  const s = store.toLowerCase();
+  if (s.includes("startech")) return "💻";
+  if (s.includes("ryans")) return "🖥️";
+  if (s.includes("rokomari")) return "📚";
+  if (s.includes("pickaboo")) return "🎯";
+  if (s.includes("gadget")) return "📱";
+  if (s.includes("walton")) return "🏭";
+  if (s.includes("istock")) return "📦";
+  if (s.includes("dazzle")) return "✨";
+  if (s.includes("aiman")) return "🏪";
+  if (s.includes("hns")) return "🔧";
   return "🏪";
 }
 
-function getStoreColor(store: string): string {
-  const lower = store.toLowerCase();
-  if (lower.includes("startech")) return "bg-blue-50 text-blue-700 border-blue-200";
-  if (lower.includes("ryans")) return "bg-purple-50 text-purple-700 border-purple-200";
-  if (lower.includes("rokomari")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  if (lower.includes("pickaboo")) return "bg-orange-50 text-orange-700 border-orange-200";
-  if (lower.includes("applegadgets")) return "bg-gray-50 text-gray-700 border-gray-300";
-  if (lower.includes("istock")) return "bg-sky-50 text-sky-700 border-sky-200";
-  if (lower.includes("dazzle")) return "bg-pink-50 text-pink-700 border-pink-200";
-  return "bg-gray-50 text-gray-700 border-gray-200";
-}
-
 const PROGRESS_STEPS = [
-  { label: "Searching Google...", icon: Globe },
-  { label: "Scanning Bangladeshi stores...", icon: Store },
-  { label: "Extracting offer prices...", icon: Tag },
-  { label: "Ranking by best price...", icon: TrendingDown },
+  { label: "Searching stores...", icon: Globe },
+  { label: "Scanning prices...", icon: Store },
+  { label: "Extracting offers...", icon: Tag },
+  { label: "Ranking results...", icon: TrendingDown },
 ];
 
 export default function Home() {
@@ -164,44 +110,34 @@ export default function Home() {
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Apply client-side condition filter
   const results = conditionFilter === "all"
     ? allResults
     : allResults.filter((r) => r.condition === conditionFilter);
 
-  // Progress animation during search
   useEffect(() => {
     if (!loading) return;
     setProgressStep(0);
     const interval = setInterval(() => {
-      setProgressStep((prev) => {
-        if (prev < PROGRESS_STEPS.length - 1) return prev + 1;
-        return prev;
-      });
-    }, 1500);
+      setProgressStep((prev) => (prev < PROGRESS_STEPS.length - 1 ? prev + 1 : prev));
+    }, 1400);
     return () => clearInterval(interval);
   }, [loading]);
 
-  // Search suggestions filter
   useEffect(() => {
     if (query.trim().length > 0) {
-      const filtered = SEARCH_SUGGESTIONS.filter((s) =>
-        s.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 5);
-      setFilteredSuggestions(filtered);
+      setFilteredSuggestions(
+        SEARCH_SUGGESTIONS.filter((s) => s.toLowerCase().includes(query.toLowerCase())).slice(0, 5)
+      );
     } else {
       setFilteredSuggestions([]);
     }
   }, [query]);
 
-  // Click outside to close suggestions
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(e.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(e.target as Node)
+        suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node) &&
+        inputRef.current && !inputRef.current.contains(e.target as Node)
       ) {
         setShowSuggestions(false);
       }
@@ -231,25 +167,18 @@ export default function Home() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: q, condition: "all" }),
         });
-
         const data: SearchResponse = await res.json();
         setSearchTime(Date.now() - startTime);
 
         if (data.error) {
           setError(data.error);
-          setAllResults([]);
         } else if (data.products.length === 0) {
-          setError(
-            data.message ||
-              `No prices found for "${q}". Try a more specific product name.`
-          );
-          setAllResults([]);
+          setError(data.message || `No prices found for "${q}". Try a different product name.`);
         } else {
           setAllResults(data.products);
         }
       } catch {
-        setError("Network error. Please check your connection and try again.");
-        setAllResults([]);
+        setError("Network error. Please try again.");
       } finally {
         setLoading(false);
       }
@@ -258,197 +187,133 @@ export default function Home() {
   );
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      setShowSuggestions(false);
-      handleSearch();
-    }
-    if (e.key === "Escape") {
-      setShowSuggestions(false);
-    }
+    if (e.key === "Enter") { setShowSuggestions(false); handleSearch(); }
+    if (e.key === "Escape") setShowSuggestions(false);
   };
 
   const clearSearch = () => {
-    setQuery("");
-    setSearched(false);
-    setAllResults([]);
-    setError(null);
-    setCurrentQuery("");
-    setConditionFilter("all");
+    setQuery(""); setSearched(false); setAllResults([]); setError(null);
+    setCurrentQuery(""); setConditionFilter("all");
     inputRef.current?.focus();
   };
 
   const newCount = allResults.filter((r) => r.condition === "new").length;
   const usedCount = allResults.filter((r) => r.condition === "used").length;
-
   const lowestPrice = results.length > 0 ? results[0].price : 0;
-  const highestPrice =
-    results.length > 0 ? results[results.length - 1].price : 0;
+  const highestPrice = results.length > 0 ? results[results.length - 1].price : 0;
   const savings = highestPrice - lowestPrice;
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="sticky top-0 z-50 border-b bg-white/90 backdrop-blur-lg">
-        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button
-            onClick={clearSearch}
-            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
-          >
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-green-600 to-red-500 flex items-center justify-center">
-              <TrendingDown className="w-5 h-5 text-white" />
+    <div className="min-h-screen flex flex-col" style={{ background: "linear-gradient(180deg, #f0fdf4 0%, #ffffff 40%, #ffffff 100%)" }}>
+      {/* ─── HEADER ─── */}
+      <header className="sticky top-0 z-50 border-b border-border/50 bg-white/70 backdrop-blur-xl">
+        <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
+          <button onClick={clearSearch} className="flex items-center gap-2.5 group">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:shadow-lg group-hover:shadow-emerald-500/30 transition-shadow">
+              <TrendingDown className="w-4 h-4 text-white" />
             </div>
-            <div className="text-left">
-              <h1 className="text-lg font-bold leading-tight text-foreground">
-                PriceBD
-              </h1>
-              <p className="text-[10px] text-muted-foreground leading-none">
-                Compare & Save
-              </p>
+            <div>
+              <h1 className="text-base font-bold text-foreground leading-none tracking-tight">PriceBD</h1>
+              <p className="text-[9px] text-muted-foreground leading-none mt-0.5">Compare &amp; Save</p>
             </div>
           </button>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Globe className="w-3.5 h-3.5" />
-            <span>Bangladesh</span>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted/50 rounded-full px-3 py-1">
+              <Shield className="w-3 h-3 text-emerald-500" />
+              Verified stores only
+            </div>
+            <div className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              <Globe className="w-3 h-3" />
+              BD
+            </div>
           </div>
         </div>
       </header>
 
       <main className="flex-1">
-        {/* Hero Section */}
-        <section
-          className={`relative overflow-hidden transition-all duration-500 ${
-            searched ? "py-6 md:py-8" : "py-14 md:py-20"
-          }`}
-        >
-          <div className="absolute inset-0 -z-10">
-            <div className="absolute top-0 left-1/4 w-72 h-72 bg-green-100 rounded-full blur-3xl opacity-40" />
-            <div className="absolute bottom-0 right-1/4 w-72 h-72 bg-red-100 rounded-full blur-3xl opacity-30" />
+        {/* ─── HERO ─── */}
+        <section className={`relative transition-all duration-500 ${searched ? "pt-6 pb-4" : "pt-16 pb-10 md:pt-24 md:pb-16"}`}>
+          <div className="absolute inset-0 -z-10 overflow-hidden">
+            <div className="absolute -top-40 left-1/3 w-[500px] h-[500px] bg-emerald-100 rounded-full blur-[100px] opacity-60" />
+            <div className="absolute -bottom-40 right-1/3 w-[400px] h-[400px] bg-teal-100 rounded-full blur-[100px] opacity-50" />
           </div>
 
           <div className="max-w-3xl mx-auto px-4 text-center">
             {!searched && (
-              <div className="mb-8 space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-700">
-                <div className="inline-flex items-center gap-2 bg-green-50 border border-green-200 rounded-full px-4 py-1.5 text-sm text-green-800">
-                  <Zap className="w-4 h-4" />
-                  Smart price comparison for Bangladesh
+              <div className="mb-8 space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                <div className="inline-flex items-center gap-2 bg-emerald-50 border border-emerald-200/80 rounded-full px-4 py-1.5 text-sm text-emerald-700 font-medium">
+                  <Sparkles className="w-4 h-4" />
+                  AI-powered price comparison
                 </div>
-                <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight text-foreground">
-                  Find the{" "}
-                  <span className="bg-gradient-to-r from-green-600 to-emerald-500 bg-clip-text text-transparent">
-                    Best Price
-                  </span>
+                <h2 className="text-4xl md:text-6xl font-extrabold tracking-tight text-foreground leading-[1.1]">
+                  Best Prices
                   <br />
-                  Across All Stores
+                  <span className="bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500 bg-clip-text text-transparent">
+                    Across Bangladesh
+                  </span>
                 </h2>
-                <p className="text-lg text-muted-foreground max-w-xl mx-auto">
-                  Search any product and we scan multiple Bangladeshi stores
-                  instantly. Always showing offer prices. Save money on every purchase.
+                <p className="text-base md:text-lg text-muted-foreground max-w-lg mx-auto leading-relaxed">
+                  Search any product. We scan verified Bangladeshi stores, show offer prices, and rank them lowest first.
                 </p>
               </div>
             )}
 
             {searched && !loading && (
-              <div className="mb-4">
-                <h2 className="text-xl md:text-2xl font-bold text-foreground">
-                  {allResults.length > 0
-                    ? "Prices for"
-                    : "Searching for"}{" "}
-                  <span className="text-green-600">
-                    &ldquo;{currentQuery}&rdquo;
-                  </span>
+              <div className="mb-4 animate-in fade-in duration-300">
+                <h2 className="text-lg md:text-xl font-bold text-foreground">
+                  {allResults.length > 0 ? "Prices for" : "Search for"}{" "}
+                  <span className="text-emerald-600">&ldquo;{currentQuery}&rdquo;</span>
                 </h2>
-                {allResults.length > 0 && (
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Found {allResults.length} prices across{" "}
-                    {new Set(allResults.map((r) => r.store)).size} store
-                    {new Set(allResults.map((r) => r.store)).size > 1 ? "s" : ""}
-                  </p>
-                )}
               </div>
             )}
 
-            {/* Search Bar */}
+            {/* ─── SEARCH BAR ─── */}
             <div className="relative max-w-2xl mx-auto">
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground z-10" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground/70 z-10" />
                   <Input
                     ref={inputRef}
                     type="text"
-                    placeholder="Search any product... e.g. iPad Air M1, Samsung Galaxy S24"
+                    placeholder="Search product... e.g. iPad Air M1"
                     value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      setShowSuggestions(true);
-                    }}
+                    onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
                     onFocus={() => setShowSuggestions(true)}
                     onKeyDown={handleKeyDown}
                     disabled={loading}
-                    className="pl-11 pr-10 h-12 md:h-14 text-base rounded-xl border-2 border-green-200 focus:border-green-500 shadow-lg shadow-green-500/10"
+                    className="pl-12 pr-10 h-12 md:h-[52px] text-base rounded-2xl border-2 border-emerald-200/80 focus:border-emerald-400 bg-white shadow-xl shadow-emerald-500/5 transition-all"
                   />
                   {query && !loading && (
-                    <button
-                      onClick={clearSearch}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    >
+                    <button onClick={clearSearch} className="absolute right-3.5 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground transition-all">
                       <X className="w-4 h-4" />
                     </button>
                   )}
-
-                  {/* Autocomplete */}
                   {showSuggestions && filteredSuggestions.length > 0 && !loading && (
-                    <div
-                      ref={suggestionsRef}
-                      className="absolute top-full mt-1 left-0 right-0 bg-white border border-border rounded-xl shadow-xl z-50 overflow-hidden"
-                    >
-                      {filteredSuggestions.map((suggestion) => (
-                        <button
-                          key={suggestion}
-                          onClick={() => {
-                            setQuery(suggestion);
-                            setShowSuggestions(false);
-                            handleSearch(suggestion);
-                          }}
-                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-green-50 transition-colors flex items-center gap-2"
-                        >
-                          <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-                          <span>{suggestion}</span>
+                    <div ref={suggestionsRef} className="absolute top-full mt-2 left-0 right-0 bg-white border border-border/80 rounded-2xl shadow-2xl z-50 overflow-hidden">
+                      {filteredSuggestions.map((s) => (
+                        <button key={s} onClick={() => { setQuery(s); setShowSuggestions(false); handleSearch(s); }}
+                          className="w-full text-left px-4 py-2.5 text-sm hover:bg-emerald-50 transition-colors flex items-center gap-2.5">
+                          <Search className="w-3.5 h-3.5 text-muted-foreground/60" />
+                          <span>{s}</span>
                         </button>
                       ))}
                     </div>
                   )}
                 </div>
-                <Button
-                  onClick={() => handleSearch()}
-                  disabled={loading || !query.trim()}
-                  className="h-12 md:h-14 px-6 md:px-8 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold shadow-lg shadow-green-600/25 transition-all disabled:opacity-50"
-                >
-                  {loading ? (
-                    <RefreshCw className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <>
-                      <Search className="w-5 h-5 md:mr-2" />
-                      <span className="hidden md:inline">Search</span>
-                    </>
-                  )}
+                <Button onClick={() => handleSearch()} disabled={loading || !query.trim()}
+                  className="h-12 md:h-[52px] px-5 md:px-7 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-xl shadow-emerald-600/20 transition-all disabled:opacity-50">
+                  {loading ? <RefreshCw className="w-5 h-5 animate-spin" /> : <><Search className="w-5 h-5 md:mr-1.5" /><span className="hidden md:inline">Search</span></>}
                 </Button>
               </div>
             </div>
 
-            {/* Popular searches */}
             {!searched && (
-              <div className="mt-6 space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
-                <p className="text-sm text-muted-foreground">Try searching:</p>
+              <div className="mt-6 space-y-2.5 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-300">
+                <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Popular searches</p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {POPULAR_SEARCHES.map((term) => (
-                    <button
-                      key={term}
-                      onClick={() => {
-                        setQuery(term);
-                        handleSearch(term);
-                      }}
-                      className="px-3 py-1.5 text-sm bg-white border border-border rounded-full hover:border-green-400 hover:bg-green-50 transition-colors text-muted-foreground hover:text-green-700"
-                    >
+                    <button key={term} onClick={() => { setQuery(term); handleSearch(term); }}
+                      className="px-3.5 py-1.5 text-sm bg-white/80 border border-border/80 rounded-full hover:border-emerald-400 hover:bg-emerald-50 hover:text-emerald-700 transition-all text-muted-foreground shadow-sm">
                       {term}
                     </button>
                   ))}
@@ -458,370 +323,259 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Results Section */}
+        {/* ─── RESULTS SECTION ─── */}
         <section className="max-w-6xl mx-auto px-4 pb-16">
-          {/* Loading State */}
+          {/* Loading */}
           {loading && (
-            <div className="space-y-5">
-              <div className="bg-white border border-border rounded-xl p-4 shadow-sm">
-                <div className="flex items-center gap-3 mb-3">
-                  <Sparkles className="w-5 h-5 text-green-600 animate-pulse" />
-                  <span className="text-sm font-medium text-foreground">
-                    Searching for &ldquo;{currentQuery}&rdquo;
-                  </span>
+            <div className="space-y-4">
+              <div className="bg-white/80 backdrop-blur border border-border/50 rounded-2xl p-5 shadow-sm">
+                <div className="flex items-center gap-2.5 mb-4">
+                  <div className="w-5 h-5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="text-sm font-medium text-foreground">Searching for &ldquo;{currentQuery}&rdquo;</span>
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   {PROGRESS_STEPS.map((step, i) => {
                     const Icon = step.icon;
                     const isActive = i === progressStep;
                     const isDone = i < progressStep;
                     return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2 text-sm transition-all duration-300 ${
-                          isActive
-                            ? "text-green-700 font-medium"
-                            : isDone
-                            ? "text-emerald-600"
-                            : "text-muted-foreground/50"
-                        }`}
-                      >
-                        {isActive ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : isDone ? (
-                          <span className="text-emerald-500">✓</span>
-                        ) : (
-                          <span className="text-muted-foreground/30">○</span>
-                        )}
+                      <div key={i} className={`flex items-center gap-2.5 text-sm transition-all duration-300 ${isActive ? "text-emerald-700 font-medium" : isDone ? "text-emerald-500" : "text-muted-foreground/40"}`}>
+                        {isActive ? <RefreshCw className="w-4 h-4 animate-spin" /> : isDone ? <span className="text-emerald-500 text-xs">✓</span> : <CircleDot className="w-4 h-4" />}
                         <Icon className="w-3.5 h-3.5" />
                         <span>{step.label}</span>
                       </div>
                     );
                   })}
                 </div>
-                <div className="mt-3 w-full bg-green-100 rounded-full h-1.5 overflow-hidden">
-                  <div
-                    className="bg-green-500 h-full rounded-full transition-all duration-1000 ease-out"
-                    style={{
-                      width: `${((progressStep + 1) / PROGRESS_STEPS.length) * 100}%`,
-                    }}
-                  />
+                <div className="mt-4 w-full bg-emerald-100/80 rounded-full h-1.5 overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${((progressStep + 1) / PROGRESS_STEPS.length) * 100}%` }} />
                 </div>
               </div>
-              {[1, 2, 3, 4].map((i) => (
-                <Card key={i} className="overflow-hidden">
-                  <CardContent className="p-4 md:p-5">
-                    <div className="flex gap-4">
-                      <Skeleton className="h-12 w-12 rounded-xl flex-shrink-0" />
-                      <div className="flex-1 space-y-2">
-                        <Skeleton className="h-5 w-3/4" />
-                        <Skeleton className="h-4 w-1/2" />
-                        <Skeleton className="h-4 w-1/4" />
-                      </div>
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="bg-white/60 border border-border/30 rounded-2xl p-5">
+                  <div className="flex gap-4">
+                    <Skeleton className="h-12 w-12 rounded-xl" />
+                    <div className="flex-1 space-y-2.5">
+                      <Skeleton className="h-5 w-2/3" />
+                      <Skeleton className="h-4 w-1/3" />
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
           )}
 
-          {/* Error State */}
+          {/* Error */}
           {!loading && error && (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
-                <Search className="w-8 h-8 text-amber-500" />
+            <div className="text-center py-12 animate-in fade-in duration-300">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 border border-amber-200/50 flex items-center justify-center mx-auto mb-4">
+                <Search className="w-7 h-7 text-amber-500" />
               </div>
-              <h3 className="text-lg font-semibold text-foreground mb-2">
-                No Prices Found
-              </h3>
-              <p className="text-muted-foreground max-w-md mx-auto text-sm">
-                {error}
-              </p>
-              <div className="mt-6 flex flex-wrap justify-center gap-2">
-                <p className="w-full text-xs text-muted-foreground mb-2">Try one of these:</p>
-                {["iPad Air M1", "Samsung Galaxy S24", "iPhone 15", "MacBook Air M2"].map(
-                  (term) => (
-                    <button
-                      key={term}
-                      onClick={() => {
-                        setQuery(term);
-                        handleSearch(term);
-                      }}
-                      className="px-3 py-1.5 text-sm bg-white border border-border rounded-full hover:border-green-400 hover:bg-green-50 transition-colors text-muted-foreground hover:text-green-700"
-                    >
-                      {term}
-                    </button>
-                  )
-                )}
+              <h3 className="text-lg font-semibold text-foreground mb-2">No Prices Found</h3>
+              <p className="text-muted-foreground max-w-md mx-auto text-sm">{error}</p>
+              <div className="mt-5 flex flex-wrap justify-center gap-2">
+                {["iPad Air M1", "Samsung Galaxy S24", "iPhone 15", "MacBook Air M2"].map((term) => (
+                  <button key={term} onClick={() => { setQuery(term); handleSearch(term); }}
+                    className="px-3 py-1.5 text-sm bg-white border border-border rounded-full hover:border-emerald-400 hover:bg-emerald-50 transition-all text-muted-foreground hover:text-emerald-700">
+                    {term}
+                  </button>
+                ))}
               </div>
             </div>
           )}
 
           {/* Results */}
           {!loading && results.length > 0 && (
-            <div className="space-y-5 animate-in fade-in slide-in-from-bottom-3 duration-500">
-              {/* Stats Bar + Filter */}
-              <div className="space-y-3">
+            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-3 duration-500">
+              {/* Stats + Filter Bar */}
+              <div className="flex flex-col gap-3">
                 {/* Stats */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl p-4">
-                  <div className="flex items-center gap-4 sm:gap-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-emerald-50/80 to-teal-50/60 border border-emerald-200/50 rounded-2xl p-4">
+                  <div className="flex items-center gap-5">
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                        Results
-                      </p>
-                      <p className="text-xl font-bold text-foreground">
-                        {results.length}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Found</p>
+                      <p className="text-xl font-bold text-foreground">{results.length}</p>
                     </div>
-                    <div className="w-px h-8 bg-green-200" />
+                    <div className="w-px h-8 bg-emerald-200/60" />
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                        Lowest
-                      </p>
-                      <p className="text-xl font-bold text-emerald-600">
-                        ৳{formatPrice(lowestPrice)}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Lowest</p>
+                      <p className="text-xl font-bold text-emerald-600">৳{formatPrice(lowestPrice)}</p>
                     </div>
-                    <div className="w-px h-8 bg-green-200" />
+                    <div className="w-px h-8 bg-emerald-200/60" />
                     <div>
-                      <p className="text-[11px] text-muted-foreground uppercase tracking-wide">
-                        Highest
-                      </p>
-                      <p className="text-xl font-bold text-red-500">
-                        ৳{formatPrice(highestPrice)}
-                      </p>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Highest</p>
+                      <p className="text-xl font-bold text-red-500">৳{formatPrice(highestPrice)}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <Clock className="w-3 h-3" />
                     {((searchTime / 1000) || 0).toFixed(1)}s
                   </div>
                 </div>
 
-                {/* Condition Filter */}
-                <div className="flex items-center gap-2">
-                  <Filter className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm text-muted-foreground font-medium">Filter:</span>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setConditionFilter("all")}
-                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium ${
-                        conditionFilter === "all"
-                          ? "bg-green-600 text-white border-green-600 shadow-sm"
-                          : "bg-white text-muted-foreground border-border hover:border-green-300 hover:text-green-700"
-                      }`}
-                    >
-                      All ({allResults.length})
-                    </button>
-                    <button
-                      onClick={() => setConditionFilter("new")}
-                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium flex items-center gap-1 ${
-                        conditionFilter === "new"
-                          ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
-                          : "bg-white text-muted-foreground border-border hover:border-emerald-300 hover:text-emerald-700"
-                      }`}
-                    >
-                      <PackageCheck className="w-3.5 h-3.5" />
-                      New ({newCount})
-                    </button>
-                    <button
-                      onClick={() => setConditionFilter("used")}
-                      className={`px-3 py-1.5 text-sm rounded-lg border transition-all font-medium flex items-center gap-1 ${
-                        conditionFilter === "used"
-                          ? "bg-amber-600 text-white border-amber-600 shadow-sm"
-                          : "bg-white text-muted-foreground border-border hover:border-amber-300 hover:text-amber-700"
-                      }`}
-                    >
-                      <Package className="w-3.5 h-3.5" />
-                      Used ({usedCount})
-                    </button>
+                {/* Filter + Savings Row */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+                    <div className="flex gap-1">
+                      {([
+                        { key: "all" as ConditionFilter, label: "All", count: allResults.length, activeClass: "bg-foreground text-white" },
+                        { key: "new" as ConditionFilter, label: "New", count: newCount, icon: PackageCheck, activeClass: "bg-emerald-600 text-white" },
+                        { key: "used" as ConditionFilter, label: "Used", count: usedCount, icon: Package, activeClass: "bg-amber-600 text-white" },
+                      ]).map(({ key, label, count, icon: Icon, activeClass }) => (
+                        <button key={key} onClick={() => setConditionFilter(key)}
+                          className={`px-3 py-1 text-xs rounded-lg border font-medium transition-all flex items-center gap-1 ${
+                            conditionFilter === key ? `${activeClass} border-transparent shadow-sm` : "bg-white text-muted-foreground border-border hover:border-emerald-300"
+                          }`}>
+                          {Icon && <Icon className="w-3 h-3" />}
+                          {label} ({count})
+                        </button>
+                      ))}
+                    </div>
                   </div>
+                  {results.length > 1 && savings > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs bg-emerald-50 border border-emerald-200/60 rounded-lg px-3 py-1.5">
+                      <BadgePercent className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-800">Save up to <strong className="text-emerald-900">৳{formatPrice(savings)}</strong></span>
+                    </div>
+                  )}
                 </div>
-
-                {/* Savings callout */}
-                {results.length > 1 && savings > 0 && (
-                  <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex items-center gap-2 text-sm">
-                    <Zap className="w-4 h-4 text-emerald-600 flex-shrink-0" />
-                    <span className="text-emerald-800">
-                      You could save up to{" "}
-                      <strong className="text-emerald-900">৳{formatPrice(savings)}</strong>{" "}
-                      by choosing the best price!
-                    </span>
-                  </div>
-                )}
               </div>
 
               {/* Product Cards */}
-              <div className="space-y-2.5">
-                {results.map((product, index) => (
-                  <a
-                    key={product.url + index}
-                    href={product.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block group"
-                  >
-                    <Card
-                      className={`overflow-hidden transition-all duration-200 hover:shadow-lg hover:border-green-300 border-2 group-hover:translate-y-[-1px] ${
-                        index === 0
-                          ? "border-emerald-200 bg-emerald-50/30"
-                          : ""
-                      }`}
-                    >
-                      <CardContent className="p-4 md:p-5">
-                        <div className="flex items-start gap-3 md:gap-4">
-                          {/* Rank */}
-                          <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                            <div
-                              className={`w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center text-base md:text-lg ${
-                                index === 0
-                                  ? "bg-emerald-100 ring-2 ring-emerald-300"
-                                  : index === 1
-                                  ? "bg-amber-50"
-                                  : index === 2
-                                  ? "bg-orange-50"
-                                  : "bg-muted"
-                              }`}
-                            >
-                              {getStoreIcon(product.store)}
-                            </div>
-                            <span className="text-[10px] font-bold text-muted-foreground">
-                              #{index + 1}
-                            </span>
+              <div className="space-y-2">
+                {results.map((product, index) => {
+                  const discount = getDiscountPercent(product.price, product.originalPrice || 0);
+                  return (
+                    <a key={product.url + index} href={product.url} target="_blank" rel="noopener noreferrer" className="block group">
+                      <div className={`relative overflow-hidden rounded-2xl border transition-all duration-200 group-hover:shadow-lg group-hover:shadow-emerald-500/5 group-hover:border-emerald-300 group-hover:-translate-y-0.5 bg-white ${
+                        index === 0 ? "border-emerald-300 bg-emerald-50/40" : "border-border/60"
+                      }`}>
+                        {/* Best Price ribbon */}
+                        {index === 0 && (
+                          <div className="absolute top-0 right-0 bg-emerald-600 text-white text-[10px] font-bold px-3 py-0.5 rounded-bl-lg">
+                            BEST PRICE
                           </div>
-
-                          {/* Product Info */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <h3 className="font-semibold text-foreground group-hover:text-green-700 transition-colors line-clamp-2 text-sm md:text-base">
-                                  {product.name}
-                                </h3>
-                                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                                  <Badge
-                                    variant="outline"
-                                    className={`text-[11px] font-normal ${getStoreColor(product.store)}`}
-                                  >
-                                    <ShoppingCart className="w-3 h-3 mr-0.5" />
-                                    {product.store}
-                                  </Badge>
-                                  {getRankBadge(index)}
-                                  {product.condition === "used" ? (
-                                    <Badge className="bg-amber-50 text-amber-700 border border-amber-200 text-[11px]">
-                                      <Package className="w-3 h-3 mr-0.5" />
-                                      Used
-                                    </Badge>
-                                  ) : (
-                                    <Badge className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px]">
-                                      <PackageCheck className="w-3 h-3 mr-0.5" />
-                                      New
-                                    </Badge>
-                                  )}
-                                </div>
-                                {product.snippet && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                                    {product.snippet}
-                                  </p>
-                                )}
+                        )}
+                        <div className="p-4 md:p-5">
+                          <div className="flex items-start gap-3 md:gap-4">
+                            {/* Store icon + rank */}
+                            <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                              <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-base ${
+                                index === 0 ? "bg-emerald-100 ring-2 ring-emerald-300" : index === 1 ? "bg-amber-50" : index === 2 ? "bg-orange-50" : "bg-muted/50"
+                              }`}>
+                                {getStoreIcon(product.store)}
                               </div>
+                              <span className="text-[10px] font-bold text-muted-foreground/60">#{index + 1}</span>
+                            </div>
 
-                              {/* Price */}
-                              <div className="flex items-center gap-2 flex-shrink-0 sm:ml-4">
-                                <div className="text-right">
-                                  {/* Offer price (main) */}
-                                  <p
-                                    className={`text-lg md:text-xl font-bold ${getPriceColor(index, results.length)}`}
-                                  >
-                                    ৳{formatPrice(product.price)}
-                                  </p>
-                                  {/* Original price (strikethrough) */}
-                                  {product.originalPrice && product.originalPrice > product.price && (
-                                    <p className="text-[11px] text-muted-foreground line-through">
-                                      ৳{formatPrice(product.originalPrice)}
-                                    </p>
-                                  )}
-                                  {/* Price difference */}
-                                  {index > 0 && lowestPrice > 0 && (
-                                    <p className="text-[11px] text-red-400">
-                                      +৳{formatPrice(product.price - lowestPrice)} more
-                                    </p>
-                                  )}
-                                  {/* Discount percentage */}
-                                  {product.originalPrice && product.originalPrice > product.price && (
-                                    <p className="text-[11px] text-emerald-600 font-semibold">
-                                      {Math.round(
-                                        ((product.originalPrice - product.price) /
-                                          product.originalPrice) *
-                                          100
-                                      )}
-                                      % off
-                                    </p>
-                                  )}
+                            {/* Info */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <h3 className="font-semibold text-foreground group-hover:text-emerald-700 transition-colors line-clamp-2 text-sm md:text-[15px] leading-snug">
+                                    {product.name}
+                                  </h3>
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                    <Badge variant="outline" className="text-[10px] font-medium h-5 bg-muted/30">
+                                      <ShoppingCart className="w-2.5 h-2.5 mr-0.5" />
+                                      {product.store}
+                                    </Badge>
+                                    {index < 3 && (
+                                      <Badge className={`text-[10px] h-5 ${
+                                        index === 0 ? "bg-emerald-100 text-emerald-800 border-emerald-200" :
+                                        index === 1 ? "bg-amber-100 text-amber-800 border-amber-200" :
+                                        "bg-orange-100 text-orange-800 border-orange-200"
+                                      }`}>
+                                        <Star className="w-2.5 h-2.5 mr-0.5" />
+                                        {index === 0 ? "Best" : index === 1 ? "2nd" : "3rd"}
+                                      </Badge>
+                                    )}
+                                    <Badge className={`text-[10px] h-5 ${
+                                      product.condition === "used"
+                                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                                        : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                    }`}>
+                                      {product.condition === "used" ? <Package className="w-2.5 h-2.5 mr-0.5" /> : <PackageCheck className="w-2.5 h-2.5 mr-0.5" />}
+                                      {product.condition === "used" ? "Used" : "New"}
+                                    </Badge>
+                                    {discount > 0 && (
+                                      <Badge className="text-[10px] h-5 bg-red-50 text-red-600 border-red-200 font-semibold">
+                                        <BadgePercent className="w-2.5 h-2.5 mr-0.5" />
+                                        {discount}% OFF
+                                      </Badge>
+                                    )}
+                                  </div>
                                 </div>
-                                <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:text-green-600 transition-colors flex-shrink-0" />
+
+                                {/* Price section */}
+                                <div className="flex items-center gap-3 flex-shrink-0 sm:ml-4 sm:text-right">
+                                  <div>
+                                    <p className={`text-xl md:text-2xl font-bold tracking-tight ${
+                                      index === 0 ? "text-emerald-600" : index === results.length - 1 && results.length > 1 ? "text-red-500" : "text-foreground"
+                                    }`}>
+                                      ৳{formatPrice(product.price)}
+                                    </p>
+                                    {product.originalPrice && product.originalPrice > product.price && (
+                                      <p className="text-[11px] text-muted-foreground line-through">
+                                        ৳{formatPrice(product.originalPrice)}
+                                      </p>
+                                    )}
+                                    {index > 0 && lowestPrice > 0 && (
+                                      <p className="text-[10px] text-red-400 font-medium">+৳{formatPrice(product.price - lowestPrice)}</p>
+                                    )}
+                                  </div>
+                                  <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-emerald-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+                                </div>
                               </div>
                             </div>
                           </div>
                         </div>
-                      </CardContent>
-                    </Card>
-                  </a>
-                ))}
+                      </div>
+                    </a>
+                  );
+                })}
               </div>
 
-              {/* Footer info */}
-              <div className="text-center text-xs text-muted-foreground pt-3 space-y-1">
-                <p>
-                  Showing offer/sale prices when available. Original prices shown with strikethrough.
-                </p>
-                <p>
-                  Click on a product to visit the store for the latest price and availability.
-                </p>
-              </div>
+              {/* Footer note */}
+              <p className="text-center text-[11px] text-muted-foreground/60 pt-2">
+                Offer prices shown when available &middot; Click to visit store &middot; Prices may vary
+              </p>
             </div>
           )}
 
-          {/* No results after filter */}
+          {/* Empty after filter */}
           {!loading && allResults.length > 0 && results.length === 0 && (
             <div className="text-center py-8">
-              <p className="text-muted-foreground text-sm">
-                No {conditionFilter} products found for &ldquo;{currentQuery}&rdquo;.
-                Try switching to a different filter.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setConditionFilter("all")}
-                className="mt-3"
-              >
-                Show All Products
-              </Button>
+              <p className="text-muted-foreground text-sm">No {conditionFilter} products found. Try a different filter.</p>
+              <Button variant="outline" size="sm" onClick={() => setConditionFilter("all")} className="mt-3">Show All</Button>
             </div>
           )}
 
-          {/* Empty initial state */}
+          {/* Empty initial */}
           {!searched && !loading && (
-            <div className="text-center py-12 text-muted-foreground">
-              <ShoppingCart className="w-12 h-12 mx-auto mb-4 opacity-20" />
-              <p className="text-sm">
-                Search for a product to compare prices across Bangladeshi stores
-              </p>
+            <div className="text-center py-12 text-muted-foreground/40">
+              <ShoppingCart className="w-10 h-10 mx-auto mb-3" />
+              <p className="text-sm">Search for a product to compare prices</p>
             </div>
           )}
         </section>
       </main>
 
-      {/* Footer */}
-      <footer className="border-t bg-muted/30 mt-auto">
-        <div className="max-w-6xl mx-auto px-4 py-5 flex flex-col md:flex-row items-center justify-between gap-2 text-xs text-muted-foreground">
+      {/* ─── FOOTER ─── */}
+      <footer className="border-t bg-white/50 mt-auto">
+        <div className="max-w-6xl mx-auto px-4 py-5 flex flex-col md:flex-row items-center justify-between gap-2 text-[11px] text-muted-foreground">
           <div className="flex items-center gap-2">
-            <div className="w-5 h-5 rounded bg-gradient-to-br from-green-600 to-red-500 flex items-center justify-center">
-              <TrendingDown className="w-3 h-3 text-white" />
+            <div className="w-4 h-4 rounded bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+              <TrendingDown className="w-2.5 h-2.5 text-white" />
             </div>
             <span className="font-semibold text-foreground">PriceBD</span>
-            <span>— Smart Price Comparison for Bangladesh</span>
+            <span className="text-muted-foreground/60">&mdash; Smart Price Comparison for Bangladesh</span>
           </div>
-          <p>Prices sourced from online stores. Always verify on the retailer&apos;s site.</p>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1"><Shield className="w-3 h-3 text-emerald-500" /> Verified stores</span>
+            <span>Always verify prices on retailer&apos;s site</span>
+          </div>
         </div>
       </footer>
     </div>

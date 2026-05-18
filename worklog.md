@@ -70,3 +70,30 @@ Stage Summary:
 - Offer prices always shown as main price with original price strikethrough + discount %
 - New/Used filter working with live counts
 - Condition badges (New/Used) displayed on product cards
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Modern UI redesign, URL fix, security/caching/scaling for live site
+
+Work Log:
+- Complete UI redesign: glassmorphism header, gradient hero, rounded cards, cleaner typography
+- Added "BEST PRICE" ribbon on #1 result
+- Added discount % badge (red) on products with offer prices
+- ArrowUpRight icon with hover animation for external links
+- Backend: Added in-memory cache (5 min TTL) - same query returns in 6ms instead of 17s
+- Backend: Added rate limiting (10 req/min per IP) with auto-cleanup
+- Backend: Added input sanitization (removes HTML chars, limits length)
+- Backend: Added URL validation - validates protocol, hostname, removes tracking params (srsltid, utm_*, gclid, etc.)
+- Backend: LLM-extracted URLs now validated same as regex URLs, blocked domains checked
+- Backend: Security headers (X-Content-Type-Options, X-Frame-Options, Cache-Control)
+- Tested: iPad Air M1 → 11 results, all URLs valid, caching works (6ms cached vs 17s fresh)
+- Lint check passed
+
+Stage Summary:
+- Modern professional UI with glassmorphism, gradients, smooth animations
+- Caching: repeated queries return in ~6ms (was 17s)
+- Rate limiting: 10 requests/minute per IP
+- URL validation: tracking params stripped, broken URLs rejected
+- Security: input sanitization, security headers, rate limiting
+- Live-site ready with caching for many concurrent users
