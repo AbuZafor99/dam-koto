@@ -45,6 +45,71 @@ function sanitizeQuery(query: string): string {
     .slice(0, 200);
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#x27;/g, "'");
+}
+
+function stripHtmlTags(text: string): string {
+  return decodeHtmlEntities(text.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
+function decodeDuckDuckGoRedirect(url: string): string {
+  try {
+    const normalizedUrl = url.startsWith("//") ? `https:${url}` : url;
+    const parsed = new URL(normalizedUrl);
+    const uddg = parsed.searchParams.get("uddg");
+    if (uddg) return decodeURIComponent(uddg);
+  } catch {
+    // Return the original URL if it cannot be decoded.
+  }
+  return url;
+}
+
+async function fetchSearchResults(query: string): Promise<
+  { name: string; snippet: string; url: string; host_name: string }[]
+> {
+  const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const response = await fetch(searchUrl, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "accept-language": "en-US,en;q=0.9",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Search request failed with status ${response.status}`);
+  }
+
+  const html = await response.text();
+  const results: { name: string; snippet: string; url: string; host_name: string }[] = [];
+  const resultRegex = /<a[^>]*class="[^"]*\bresult__a\b[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<a[^>]*class="[^"]*\bresult__snippet\b[^"]*"[^>]*>([\s\S]*?)<\/a>/gi;
+
+  let match: RegExpExecArray | null;
+  while ((match = resultRegex.exec(html)) && results.length < 20) {
+    const cleanedUrl = validateAndCleanUrl(decodeDuckDuckGoRedirect(decodeHtmlEntities(match[1])));
+    if (!cleanedUrl || isBlockedDomain(cleanedUrl)) continue;
+
+    const name = stripHtmlTags(match[2]);
+    const snippet = stripHtmlTags(match[3]);
+    if (!name) continue;
+
+    results.push({
+      name: name.slice(0, 200),
+      snippet: snippet.slice(0, 300),
+      url: cleanedUrl,
+      host_name: new URL(cleanedUrl).hostname.replace(/^www\./, ""),
+    });
+  }
+
+  return deduplicateResults(results);
+}
+
 // ─── CACHING: In-memory cache (5 min TTL) ───
 const searchCache = new Map<string, { data: ProductResult[]; expiresAt: number }>();
 const CACHE_TTL = 5 * 60_000; // 5 minutes
@@ -400,7 +465,7 @@ export async function POST(request: NextRequest) {
 
     for (const sq of searchQueries) {
       try {
-        const resp = await zai.functions.invoke("web_search", { query: sq, num: 10 });
+        const resp = await fetchSearchResults(sq);
         if (Array.isArray(resp)) allResults.push(...resp);
       } catch (e) {
         console.error("Search query failed:", sq, e);
